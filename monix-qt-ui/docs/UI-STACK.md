@@ -2,6 +2,10 @@
 
 Status: **proposed** · Date: 2026-08-31 · Scope: the Monix fork's new frontend only.
 
+Paths in this document are repo-root-relative: `app/`, `lib/`, `driver/`,
+`tools/` are upstream files; `monix-qt-ui/` is this fork's UI project; sibling
+docs in this directory are referenced by plain name (e.g. `ARCHITECTURE.md`).
+
 ## 1. Context
 
 The current GUI (`app/`, Dear ImGui 1.92.4 + GLFW + OpenGL 3.0) is a single
@@ -17,10 +21,12 @@ and must remain untouched:
 - `lib/monix.h/.cpp` — protocol library (static lib, the only ioctl caller)
 - `tools/monixctl.cpp` — CLI verifier (the correctness reference for every
   device call)
-- `tools/monix-driverctl`, `capture/`, `setup/`, `docs/`
+- `tools/monix-driverctl`, `capture/`, `setup/` — and the upstream `docs/`
+  library (PROTOCOL.md, DEVICES.md), which stays untouched
 
-See `docs/ARCHITECTURE.md` for the layering; the frontend contract is just the
-`monix::Device` API (~30 methods) plus the persistence format.
+See `ARCHITECTURE.md` (same directory) for the layering; the frontend
+contract is just the `monix::Device` API (~30 methods) plus the persistence
+format.
 
 ## 2. Requirements
 

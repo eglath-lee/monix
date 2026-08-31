@@ -3,8 +3,14 @@
 This document is a bird's-eye summary of how Monix is put together: the layer
 split, the communication contracts between layers, the interaction patterns,
 and what a reimplementation of any layer must know. For wire-level protocol
-details see [PROTOCOL.md](PROTOCOL.md); for per-device profiles see
-[DEVICES.md](DEVICES.md).
+details see [PROTOCOL.md](../../docs/PROTOCOL.md); for per-device profiles see
+[DEVICES.md](../../docs/DEVICES.md). Both live in the repository's upstream
+`docs/` tree (the external doc library, kept in sync with upstream).
+
+Unless another location is given, paths in this document are repo-
+root-relative: `app/`, `lib/`, `driver/`, `tools/`, `setup/` are upstream
+files; `monix-qt-ui/` is this fork's UI project. Fork references to the
+upstream doc library are written `../../docs/…`.
 
 ## 1. What Monix is
 
@@ -21,7 +27,7 @@ USB audio interfaces. The core problem it solves:
   interface 0 the entire time, so control and audio run simultaneously.
 
 Only the iD24 is hardware-verified; other models are reverse-engineered from the
-official macOS/Windows apps (see DEVICES.md).
+official macOS/Windows apps (see ../../docs/DEVICES.md).
 
 ## 2. Layer diagram
 
@@ -79,7 +85,8 @@ Notes:
 | `capture/` | RE workflow | Windows VM + usbmon capture of the official app, `decode.py` → authoritative control map |
 | `re/` | Static RE working files | macOS `iD.app` slice disassembly (gitignored) |
 | `setup/` | PipeWire split configs | Hand-editable equivalent of the GUI's Virtual Devices |
-| `docs/` | PROTOCOL.md, DEVICES.md, this file | |
+| `docs/` (upstream) | PROTOCOL.md, DEVICES.md — the external doc library; stays in sync with upstream, do not divert in fork commits |
+| `monix-qt-ui/docs/` | fork planning docs: this file, UI-STACK.md, DEV-WORKFLOW.md | |
 
 ## 4. Communication contracts
 
@@ -106,7 +113,7 @@ struct idctl_msg {          /* 16-byte header + 64-byte data */
 - Module-side validation: class requests only (`bmRequestType & 0x60 == 0x20`),
   `wLength <= 64`, serialized by a mutex, device-presence checked.
 
-### 4.2 USB wire encoding (from PROTOCOL.md)
+### 4.2 USB wire encoding (from ../../docs/PROTOCOL.md)
 
 ```
 wValue = (selector<<8) | channel      wIndex = (entity<<8)
@@ -145,12 +152,12 @@ Single-threaded event loop. **Writes are immediate, reads are polled.**
   `busActive`), the poll read-back is suspended — otherwise the stale polled
   value snaps the control back (`main.cpp:329,454`).
 - **Meter polling must stay block-based** (one transfer per 16/12 bytes) — per-
-  channel reads flood ep0 and the kernel resets the device (PROTOCOL.md §5).
+  channel reads flood ep0 and the kernel resets the device (../../docs/PROTOCOL.md §5).
 
 ### 5.1 Write-only controls (firmware limitation)
 
 The iD firmware does **not** report back faders/phase/mixer cells (GET_CUR
-stalls; see PROTOCOL.md §3). Only monitor volume, master toggles, bus volumes,
+stalls; see ../../docs/PROTOCOL.md §3). Only monitor volume, master toggles, bus volumes,
 sample rate and meters are readable. Consequences:
 
 - The GUI keeps its own local mirror of all write-only controls and persists it
@@ -192,7 +199,7 @@ The GUI is a leaf component with no influence on the rest of the system:
   no-per-channel-metering rule), the external-command integrations it wants
   (drivercheck, pwsplit, tray), and the ALSA-side volume handling for the
   audible monitor level.
-- The protocol itself is small and fully specified in PROTOCOL.md — a
+- The protocol itself is small and fully specified in ../../docs/PROTOCOL.md — a
   from-scratch implementation in another language is feasible without touching
   the kernel module (the ioctl ABI above is the only contract).
 
@@ -207,4 +214,4 @@ The GUI is a leaf component with no influence on the rest of the system:
   client-maintained.
 - No automated tests; hardware verification is the only check.
 - Entity IDs are per-USB-descriptor — non-iD24 profiles assume iD24 entity IDs
-  until confirmed on hardware (DEVICES.md "Open items").
+  until confirmed on hardware (../../docs/DEVICES.md "Open items").

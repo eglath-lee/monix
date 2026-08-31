@@ -13,7 +13,7 @@ audio keeps playing. Protocol semantics were reverse-engineered from the
 official macOS/Windows apps. **Only the iD24 is hardware-verified**; other
 models are RE'd but untested.
 
-Key docs: `docs/ARCHITECTURE.md` (system overview — read first),
+Key docs: `monix-qt-ui/docs/ARCHITECTURE.md` (system overview — read first),
 `docs/PROTOCOL.md` (wire protocol spec), `docs/DEVICES.md` (per-model RE).
 
 ## Build & dev commands
