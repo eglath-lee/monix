@@ -1,6 +1,8 @@
 # UI Tech-Stack Decision (fork planning)
 
-Status: **proposed** · Date: 2026-08-31 · Scope: the Monix fork's new frontend only.
+Status: **decided** · Date: 2026-08-31 · Scope: the Monix fork's new frontend only.
+
+Decision: **Qt 6 Quick / QML standalone app** (Option A, see §3/§5).
 
 Paths in this document are repo-root-relative: `app/`, `lib/`, `driver/`,
 `tools/` are upstream files; `monix-qt-ui/` is this fork's UI project; sibling
@@ -218,3 +220,60 @@ Hard rules:
   before phase 2.
 - **Dependency footprint**: Qt pulls more than ImGui — acceptable for a
   desktop app, worth stating in the fork's README.
+
+## 9. Environment preparation
+
+Nothing below is installed by this plan; these are the packages to provision
+before phase 1. Build rule (DEV-WORKFLOW.md §3): on Linux the app links the
+real `lib/monix`; on macOS it builds the mock backend only (no ALSA, no GLFW);
+CI compiles with Qt dev packages only — no ALSA, no hardware.
+
+**Minimum Qt: 6.5.** Arch and Homebrew currently ship newer in any case.
+
+### macOS (this machine — daily dev on the mock)
+
+```sh
+brew install qt cmake ninja
+```
+
+Checked 2026-08-31: Xcode Command Line Tools are present (Apple clang 21);
+cmake, ninja and Qt (`qt` = Qt 6) are **not** installed yet. No other
+dependency: the mock backend has none (DEV-WORKFLOW.md §3).
+
+### Arch Linux (home — verification on the iD24)
+
+Runtime packages — the app running on Hyprland:
+
+```sh
+sudo pacman -S qt6-base qt6-declarative qt6-wayland qt6-svg
+```
+
+- `qt6-wayland` is the Wayland platform plugin; `qt6-svg` is for SVG tray/app
+  icons. With Quickshell installed, `qt6-base`/`qt6-declarative` are likely
+  already present — check with `pacman -Qo $(command -v qml6)`.
+- Build tools (gcc, cmake, ninja, pkg-config, libasound) are the existing
+  upstream requirements from the project README — nothing new to add.
+- Optional: `qt6-tools` (Qt Designer, to preview QML layouts; not needed to
+  build).
+
+### CI (fork workflow, later)
+
+Extend `.github/workflows/ci.yml` with a Qt job:
+
+```sh
+sudo apt-get install -y --no-install-recommends \
+  build-essential cmake ninja-build \
+  qt6-base-dev qt6-declarative-dev
+```
+
+Ubuntu's stock Qt (6.4 on 24.04) may lag the 6.5 minimum if a newer API gets
+used — pin a newer Qt via aqtinstall in the CI job if that bites. Not a
+blocker for phase 1.
+
+### What each machine can verify after provisioning
+
+| Machine | Backend | Can verify |
+|---|---|---|
+| mac (work) | mock | UI layout, adapter logic, desktopshell degraded paths |
+| Arch (home) | real `lib/monix` | everything — the iD24 |
+| CI | mock | compile only |

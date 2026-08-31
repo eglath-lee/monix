@@ -2,6 +2,7 @@
 /build/
 /app/build/
 /lib/build/
+/monix-qt-ui/build/
 
 # kernel module artifacts
 *.ko
