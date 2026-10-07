@@ -27,6 +27,12 @@ add_custom_command(TARGET monix-gui POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
             ${CMAKE_SOURCE_DIR}/tools/monix-driverctl
             $<TARGET_FILE_DIR:monix-gui>/monix-driverctl)
+# Ship the icon next to the binary so a copied build tree finds it too (the tray
+# also resolves MONIX_SOURCE_DIR/app/icons in dev runs).
+add_custom_command(TARGET monix-gui POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/app/icons
+            $<TARGET_FILE_DIR:monix-gui>/icons)
 
 pkg_check_modules(APPINDICATOR ayatana-appindicator3-0.1)
 if(APPINDICATOR_FOUND)

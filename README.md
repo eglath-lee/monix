@@ -152,7 +152,22 @@ rebuild is needed).
 On desktops with AppIndicator/Ayatana support (KDE Plasma included), Monix shows a
 tray icon. The close button hides Monix to tray by default; use the tray menu's
 **Quit Monix** entry for a real exit. In **App Settings** you can enable
-start-at-login and install a per-user app launcher.
+start-at-login and install a per-user app launcher. The tray and launcher use the
+bundled Monix icon (`app/icons/monix.*`), installed into the system icon theme by
+`install.sh` (dev builds resolve it straight from the source tree).
+
+### Optical input & clock defaults
+
+The iD firmware powers up with **optical-in = ADAT** and **clock = Internal** and
+does not remember changes across power cycles. Monix stores your preferences in
+`~/.config/monix/app.conf` and re-applies them on every connect:
+
+- **Optical input** defaults to **S/PDIF** (switch it, or change it to ADAT, in the
+  System Panel or App Settings).
+- **Clock** auto-slaves to the **optical** input when a valid clock is present and
+  falls back to **Internal** otherwise — this avoids clock-drift crackling without
+  manual switching. Uncheck *Auto-slave clock to Optical input* in App Settings to
+  pick the source by hand instead.
 
 ## Device support
 
@@ -223,8 +238,10 @@ want as default in your sound settings.
   the running kernel. Or run `monix-driverctl install-current`.
 - **GUI says "no device" / permission denied** — not in the `audio` group yet
   (re-login after `usermod`), or the udev rule isn't installed.
-- **S/PDIF crackling** — set Clock source to **Optical** in the System Panel so the
-  iD slaves to the incoming stream, and use the same sample rate at both ends.
+- **S/PDIF crackling** — Monix auto-slaves the clock to the optical input whenever a
+  valid clock is present (App Settings → *Auto-slave clock to Optical input*), so
+  this is normally automatic. If you turned auto off, set Clock source to
+  **Optical** in the System Panel; either way keep the same sample rate at both ends.
 
 ## Support
 

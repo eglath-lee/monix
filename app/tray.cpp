@@ -2,6 +2,9 @@
 
 #if defined(MONIX_HAVE_TRAY)
 #include <gtk/gtk.h>
+#include <string>
+#include <cstdlib>
+#include <sys/stat.h>
 #if defined(MONIX_USE_AYATANA_APPINDICATOR)
 #include <libayatana-appindicator/app-indicator.h>
 #else
@@ -16,6 +19,25 @@ bool showRequested = false;
 bool hideRequested = false;
 bool quitRequested = false;
 bool trayAvailable = false;
+
+// Best available Monix icon file, or "" if none found (the caller then falls back
+// to the theme name "monix"). An absolute file path is preferred so we ship a
+// branded icon instead of the generic system "audio-card" one.
+std::string resolveIconPath() {
+    auto exists = [](const char* p) { struct stat st; return p && stat(p, &st) == 0; };
+    if (const char* e = getenv("MONIX_ICON")) if (exists(e)) return e;
+    const char* rel = "icons/hicolor/scalable/apps/monix.svg";
+    std::string p;
+    if (const char* x = getenv("XDG_DATA_HOME")) { p = std::string(x) + "/" + rel; if (exists(p.c_str())) return p; }
+    if (const char* h = getenv("HOME"))           { p = std::string(h) + "/.local/share/" + rel; if (exists(p.c_str())) return p; }
+#ifdef MONIX_SOURCE_DIR
+    p = std::string(MONIX_SOURCE_DIR) + "/app/icons/monix.svg"; if (exists(p.c_str())) return p;
+#endif
+    for (const char* base : { "/usr/local/share/", "/usr/share/" }) {
+        p = std::string(base) + rel; if (exists(p.c_str())) return p;
+    }
+    return "";
+}
 
 void onShow(GtkMenuItem*, gpointer) { showRequested = true; }
 void onHide(GtkMenuItem*, gpointer) { hideRequested = true; }
@@ -33,11 +55,13 @@ bool init() {
     if (!gtk_init_check(nullptr, nullptr)) return false;
 
     indicator = app_indicator_new("monix",
-                                  "audio-card",
+                                  "monix",
                                   APP_INDICATOR_CATEGORY_APPLICATION_STATUS);
     if (!indicator) return false;
 
     app_indicator_set_title(indicator, "Monix");
+    std::string iconPath = resolveIconPath();
+    if (!iconPath.empty()) app_indicator_set_icon_full(indicator, iconPath.c_str(), "Monix");
     app_indicator_set_status(indicator, APP_INDICATOR_STATUS_ACTIVE);
 #if defined(MONIX_USE_AYATANA_APPINDICATOR)
     g_signal_connect(indicator, APP_INDICATOR_SIGNAL_ACTIVATE_EVENT, G_CALLBACK(onActivate), nullptr);

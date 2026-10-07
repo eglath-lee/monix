@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Monix app/tray icon: a fader bank. Transparent background with bright-violet
+     shapes so it stays legible on both light and dark panels/docks.
+     Palette matches app/theme.{h,cpp}: accent #a78bfa, hi #bfa7ff. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <g stroke="#9c86e0" stroke-width="14" stroke-linecap="round">
+    <line x1="70"  y1="54" x2="70"  y2="202"/>
+    <line x1="107" y1="54" x2="107" y2="202"/>
+    <line x1="149" y1="54" x2="149" y2="202"/>
+    <line x1="186" y1="54" x2="186" y2="202"/>
+  </g>
+  <g fill="#cbb8ff">
+    <rect x="56"  y="150" width="28" height="24" rx="9"/>
+    <rect x="93"  y="102" width="28" height="24" rx="9"/>
+    <rect x="135" y="128" width="28" height="24" rx="9"/>
+    <rect x="172" y="80"  width="28" height="24" rx="9"/>
+  </g>
+</svg>
