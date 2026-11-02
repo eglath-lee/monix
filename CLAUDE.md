@@ -44,16 +44,18 @@ self-maintained:
 | `fix/dkms-toolchain` | merged into trunk; also open upstream as PR #2 |
 | `fix/window-app-id` | merged into trunk; also open upstream as PR #3 |
 | `feat/qt-qml-ui` | **not merged** — Qt 6 Quick/QML scaffold + planning docs; UI direction still undecided |
-| `fix/suspend-resume-uaf` | created from trunk, **no commits yet** — work queue below |
+| `fix/suspend-resume-uaf` | 3 commits on top of trunk: bug report + `kref` lifetime fix in the driver + stale-fd recovery in the GUI; **not yet verified on hardware**. Merges into trunk once a real suspend/resume passes |
 
 ### Work queue
 
 1. `fix/suspend-resume-uaf`: kernel use-after-free on suspend/resume, reported
-   in `docs/BUG-suspend-resume-use-after-free.md` (currently untracked). Planned
-   commits: (a) commit the report, (b) `kref` + `.release` in
-   `driver/audient_id.c` so `struct idctl_dev` outlives open fds, (c) drop the
-   stale fd on `-ENODEV` in `lib/monix.cpp` so the existing reconnect path in
-   `app/main.cpp` re-opens the device.
+   in `docs/BUG-suspend-resume-use-after-free.md`. Commits done: (a) the report,
+   (b) `kref` + `.release` in `driver/audient_id.c` so `struct idctl_dev`
+   outlives open fds, (c) drop the stale fd on `-ENODEV`/`-EBADF`/`-ESHUTDOWN`
+   in `lib/monix.cpp` so the existing reconnect path in `app/main.cpp` re-opens
+   the device. **Remaining: hardware verification** (`pm_test` reproducer
+   below), then `git merge --no-ff` into `master` and push; the driver half is
+   also worth offering upstream since it is a kernel memory-safety bug.
 2. Upstream issue #1 (Ubuntu 26.04 install failure) — the main cause is fixed by
    PR #2; the remaining two root causes are unowned: `/etc/os-release` clobbering
    the module version in `tools/monix-driverctl` (`install_deps()` sources it into
@@ -111,6 +113,10 @@ via `monixctl` (subcommands: `status`, `monitor V`,
 `master <mono|phase|cut|dim|talk|alt> on/off`, `sr HZ`, `mixer CELL V`,
 `hp N V`, `meters`, `route OUT CODE`, `restore-main`).
 
+Before installing a freshly built module over the loaded one on a dev machine,
+take a filesystem snapshot (`snapper -c root create -d "before audient_id ..."`
+on btrfs) — a bad module can wedge the USB device or the boot path.
+
 CI (`.github/workflows/ci.yml`) compiles userspace (Ubuntu) and the kernel
 module. Two things to know about it:
 
@@ -139,6 +145,24 @@ Facts that matter when editing:
 - **The kernel module is a stateless relay** — no mixer semantics; it only
   validates class requests and forwards them. All protocol meaning lives in
   `lib/monix`.
+- **`struct idctl_dev` outlives its device node**: `misc_deregister()` only
+  unlinks `/dev/audient_idN`, it does not drain open fds, so the driver holds a
+  `kref` (probe + one per `open()`) and frees only when the last fd closes —
+  never `kfree()` from `idctl_disconnect()`. After disconnect `dev->udev` is
+  NULL and every transfer returns `-ENODEV`; `lib/monix` closes the fd on that
+  error and `app/main.cpp`'s 5 s check reopens the node. Keep all `dev->udev`
+  reads (including error logging) inside `dev->lock`.
+  The `kref_get()` in `idctl_open()` needs no extra locking because the misc
+  core calls `->open()` with `misc_mtx` held and `misc_deregister()` takes the
+  same lock — verified by disassembling `misc_open()`/`misc_deregister()` in
+  `/usr/src/linux/vmlinux` on 7.2.11-arch1-1. If a future kernel calls `->open()`
+  outside that lock again, the open path needs its own registry/lock.
+- **Suspend/resume drops the device node**: every USB suspend/re-enumeration
+  runs `idctl_disconnect()`, so any long-lived fd is stale after resume. The
+  reproducer without a real sleep is `echo devices | sudo tee
+  /sys/power/pm_test`, `echo mem | sudo tee /sys/power/state`, then `echo none`
+  back; watch that `monix-gui` survives, `dmesg` has no GPF, and the mixer
+  reconnects on its own.
 - **Userspace↔module ABI**: `struct idctl_msg` (16-byte header + 64-byte data)
   is defined packed and byte-identical on both sides (`driver/audient_id.c:53`
   and `lib/monix.cpp:18`). One ioctl/write = one USB control transfer, sync and
