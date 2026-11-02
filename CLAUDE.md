@@ -33,18 +33,20 @@ self-maintained:
   `upstream/master`, and that is intentional. Users clone this repo, so trunk
   carries our fixes and features.
 - Patches that are useful upstream are still offered as PRs from short-lived
-  branches (PRs #2 and #3 are open as of the date above).
+  branches (PRs #2 and #3, plus issue #4 + PR #5 for the suspend/resume UAF, all
+  open as of 2026-11-02).
 
 ### Branch state
 
 | Branch | State |
 |---|---|
-| `master` | trunk: `chore: ignore .env` + `fix/dkms-toolchain` + `fix/window-app-id` + `feat/optical-clock-persist` |
+| `master` | trunk: `chore: ignore .env` + `fix/dkms-toolchain` + `fix/window-app-id` + `feat/optical-clock-persist` + `fix/suspend-resume-uaf` |
 | `feat/optical-clock-persist` | merged into trunk, kept for history / can be deleted |
 | `fix/dkms-toolchain` | merged into trunk; also open upstream as PR #2 |
 | `fix/window-app-id` | merged into trunk; also open upstream as PR #3 |
 | `feat/qt-qml-ui` | **not merged** — Qt 6 Quick/QML scaffold + planning docs; UI direction still undecided |
-| `fix/suspend-resume-uaf` | 5 commits on top of trunk: bug report + `kref` lifetime fix in the driver + stale-fd recovery in the GUI + stability/verification docs; **verified on hardware** (`pm_test`, kernel 7.2.11), ready to merge |
+| `fix/suspend-resume-uaf` | merged into trunk (`0497fef`); **verified on hardware**; kept for history |
+| `fix/suspend-resume-uaf-upstream` | `upstream/master` + the same 3 code commits (docs left out so the PR stays clean); open upstream as PR #5, bug written up as issue #4 |
 
 ### Work queue
 
@@ -55,9 +57,9 @@ self-maintained:
    `lib/monix.cpp` so the existing reconnect path in `app/main.cpp` re-opens
    the device, (d) keep the `audient_idN` number stable across a resume.
    **Verified on hardware** with the `pm_test` reproducer (see the report's
-   "Verification" section). Remaining: `git merge --no-ff` into `master` and
-   push; the driver half is also worth offering upstream since it is a kernel
-   memory-safety bug.
+   "Verification" section) and merged into trunk. The same three code commits
+   are offered upstream as PR #5 (issue #4); watch those for maintainer
+   feedback, but do not wait on them.
 2. Upstream issue #1 (Ubuntu 26.04 install failure) — the main cause is fixed by
    PR #2; the remaining two root causes are unowned: `/etc/os-release` clobbering
    the module version in `tools/monix-driverctl` (`install_deps()` sources it into
