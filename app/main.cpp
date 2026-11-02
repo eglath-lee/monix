@@ -115,6 +115,19 @@ int main(int argc, char** argv) {
     if (!info) info = findDevice(0x000d);             // last resort: iD24 layout
     const char* devName = info->name;
 
+    // ---- Digital I/O + clock state (shared by the poll loop and the System UI) ----
+    int  digIn = appSettings.opticalInSpdif ? 0 : 1, digOut = 0;   // 0 = S/PDIF, 1 = ADAT
+    int  clkSource = 0;             // 0 = Internal, 1 = Optical (ALSA enum)
+    bool optValid = false;          // optical clock present & valid
+    // Re-apply the persisted startup profile on every connect: the firmware boots
+    // with optical-in = ADAT and clock = Internal and forgets them on power-up.
+    auto applyStartupProfile = [&]{
+        dev.setDigitalInputADAT(!appSettings.opticalInSpdif);
+        digIn = appSettings.opticalInSpdif ? 0 : 1;
+        if (!appSettings.autoClock) { dev.setClockSource(appSettings.clockSourceManual); clkSource = appSettings.clockSourceManual; }
+    };
+    if (connected) applyStartupProfile();
+
     // Mixer geometry from the profile.
     const int NODES     = info->hasMixer ? info->mixerNodes() : 0;
     const int firstDigi = info->micInputs;                       // mics: [0, firstDigi)
@@ -178,7 +191,7 @@ int main(int argc, char** argv) {
     float busVol[3] = {0.8f,0.8f,0.8f};  // Main / Cue A / Cue B master levels (FU 0x0c)
     int   busActive = -1;                // which bus fader is being dragged (-1 = none)
     bool  mainActive = false; int sampleRate = 0; bool meterEnabled = true;
-    double lastState = 0, lastMeter = 0;
+    double lastState = 0, lastMeter = 0, lastDigital = 0;
 
     // restore persisted faders/pan/phase
     MonixState saved;
@@ -332,6 +345,7 @@ int main(int argc, char** argv) {
                         info = dev.info();
                         devName = info->name;
                     }
+                    applyStartupProfile();
                 }
             }
         }
@@ -343,6 +357,22 @@ int main(int argc, char** argv) {
                 float mv; if (!mainActive && dev.getMonitorVolume(mv)) mainVol = mv;
                 for (int m=0;m<6;m++){ bool b=false; if (dev.getMaster(masterEnum[m],b)) master[m]=b; }
                 for (int m=0;m<3;m++) if (busActive != m) { float bv; if (dev.getBusVolume((Device::Bus)m, bv)) busVol[m]=bv; }
+            }
+            if (t - lastDigital > 1000) { lastDigital = t;
+                bool a = false;
+                if (dev.getDigitalInputADAT(a))  digIn = a ? 1 : 0;
+                if (dev.getDigitalOutputADAT(a)) digOut = a ? 1 : 0;
+                optValid = dev.getOpticalClockValid();
+                int cs = dev.getClockSource(); if (cs >= 0) clkSource = cs;
+                // Auto-slave to the optical clock when it is valid (avoids the
+                // clock-drift crackle). Debounce one poll so a flapping signal does
+                // not thrash the ALSA control.
+                if (appSettings.autoClock) {
+                    static int stable = -1;
+                    int want = optValid ? 1 : 0;
+                    if (stable != want) stable = want;
+                    else if (cs >= 0 && cs != want) { dev.setClockSource(want); clkSource = want; }
+                }
             }
             if (meterEnabled && t - lastMeter > 70) { lastMeter = t;
                 uint8_t blk[32]={0};
@@ -582,14 +612,11 @@ int main(int argc, char** argv) {
                 }
             }
             ImGui::Separator();
-            // Digital I/O optical mode (0 = S/PDIF, 1 = ADAT in the radios)
-            static int digIn = 0, digOut = 0; static double digPoll = 0;
-            if (connected) { double tt = now_ms(); if (tt - digPoll > 1000) { digPoll = tt;
-                bool a; if (dev.getDigitalInputADAT(a)) digIn = a?1:0;
-                if (dev.getDigitalOutputADAT(a)) digOut = a?1:0; } }
+            // Digital I/O optical mode (0 = S/PDIF, 1 = ADAT in the radios).
+            // The input choice is persisted and re-applied on every connect.
             ImGui::TextDisabled("Digital In: "); ImGui::SameLine();
-            if (ImGui::RadioButton("S/PDIF##i", &digIn, 0) && connected) dev.setDigitalInputADAT(false); ImGui::SameLine();
-            if (ImGui::RadioButton("ADAT##i", &digIn, 1) && connected) dev.setDigitalInputADAT(true);
+            if (ImGui::RadioButton("S/PDIF##i", &digIn, 0) && connected) { dev.setDigitalInputADAT(false); appSettings.opticalInSpdif = true;  saveAppSettings(appSettings); } ImGui::SameLine();
+            if (ImGui::RadioButton("ADAT##i", &digIn, 1) && connected) { dev.setDigitalInputADAT(true);  appSettings.opticalInSpdif = false; saveAppSettings(appSettings); }
             ImGui::TextDisabled("Digital Out:"); ImGui::SameLine();
             if (ImGui::RadioButton("S/PDIF##o", &digOut, 0) && connected) dev.setDigitalOutputADAT(false); ImGui::SameLine();
             if (ImGui::RadioButton("ADAT##o", &digOut, 1) && connected) dev.setDigitalOutputADAT(true);
@@ -605,21 +632,24 @@ int main(int argc, char** argv) {
             static int mm = 0; const char* mmn[3] = {"L","C","R"};
             for (int k=0;k<3;k++){ ImGui::SameLine(); if (ImGui::RadioButton(mmn[k], &mm, k) && connected) dev.setMonoMode((MonoMode)k); }
             ImGui::Separator();
-            // Clock source (ALSA enum) — slave to optical when feeding S/PDIF/ADAT in
-            static int clk = 0; static bool optValid = false; static double clkPoll = 0;
-            if (connected) { double tt = now_ms(); if (tt - clkPoll > 1000) { clkPoll = tt;
-                int cs = dev.getClockSource(); if (cs >= 0) clk = cs; optValid = dev.getOpticalClockValid(); } }
+            // Clock source (ALSA enum). Auto-slaved to Optical on the main poll when a
+            // valid optical clock is present; manual radios only when auto is off.
             ImGui::TextDisabled("Clock source:"); ImGui::SameLine();
-            const char* clkn[2] = {"Internal","Optical (S/PDIF/ADAT)"};
-            for (int k=0;k<2;k++){ ImGui::SameLine(); if (ImGui::RadioButton(clkn[k], &clk, k) && connected) dev.setClockSource(k); }
+            if (appSettings.autoClock) {
+                ImGui::Text("%s", clkSource == 1 ? "Optical (S/PDIF/ADAT)" : "Internal");
+                ImGui::SameLine(); ImGui::TextDisabled("[auto]");
+            } else {
+                const char* clkn[2] = {"Internal","Optical (S/PDIF/ADAT)"};
+                for (int k=0;k<2;k++){ ImGui::SameLine(); if (ImGui::RadioButton(clkn[k], &clkSource, k) && connected) { dev.setClockSource(k); appSettings.clockSourceManual = k; saveAppSettings(appSettings); } }
+            }
             ImGui::SameLine(); ImGui::TextDisabled(optValid ? "[optical: locked]" : "[optical: no signal]");
             // Warn if a digital clock is present but we're not slaving to it (crackle!)
-            if (optValid && clk == 0) {
+            if (optValid && clkSource == 0 && !appSettings.autoClock) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1,0.6f,0.2f,1));
                 ImGui::TextWrapped("\xE2\x9A\xA0 Optical input detected but clock = Internal. This causes "
                                    "crackling. Set Clock source to Optical to slave to it.");
                 ImGui::PopStyleColor();
-                if (ImGui::Button("Fix: slave to Optical") && connected) { dev.setClockSource(1); clk = 1; }
+                if (ImGui::Button("Fix: slave to Optical") && connected) { dev.setClockSource(1); clkSource = 1; }
             }
             ImGui::Separator();
             // Trim knobs
@@ -676,7 +706,7 @@ int main(int argc, char** argv) {
 
         // ===== App settings: tray and user-session startup =====
         if (showApp) {
-            ImGui::SetNextWindowSize(ImVec2(420, 220), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(440, 320), ImGuiCond_FirstUseEver);
             ImGui::Begin("App Settings", &showApp);
             bool tray = appSettings.trayEnabled;
             if (ImGui::Checkbox("Tray icon", &tray)) {
@@ -712,6 +742,24 @@ int main(int argc, char** argv) {
             ImGui::TextDisabled("adds Monix to the application menu");
             if (launcherAt && now_ms() - launcherAt < 6000)
                 ImGui::TextWrapped("Launcher installed to %s", launcherPath().c_str());
+
+            ImGui::Separator();
+            bool autoClock = appSettings.autoClock;
+            if (ImGui::Checkbox("Auto-slave clock to Optical input", &autoClock)) {
+                appSettings.autoClock = autoClock;
+                if (!appSettings.autoClock) appSettings.clockSourceManual = clkSource;
+                saveAppSettings(appSettings);
+            }
+            ImGui::TextDisabled(optValid ? "Optical clock valid — clock follows it."
+                                         : "No optical clock; falls back to Internal.");
+            bool spdif = appSettings.opticalInSpdif;
+            if (ImGui::Checkbox("Optical input is S/PDIF (off = ADAT)", &spdif)) {
+                appSettings.opticalInSpdif = spdif;
+                if (connected) dev.setDigitalInputADAT(!spdif);
+                digIn = spdif ? 0 : 1;
+                saveAppSettings(appSettings);
+            }
+            ImGui::TextDisabled("(re-applied automatically on every device connect)");
             ImGui::End();
         }
 

@@ -62,6 +62,21 @@ if [ "$WITH_APP" = yes ]; then
     err "No prebuilt binary and no source to build."; exit 1
   fi
 
+  say "Installing icons"
+  if [ -f app/icons/monix.svg ]; then
+    sudo install -Dm644 app/icons/monix.svg \
+         /usr/local/share/icons/hicolor/scalable/apps/monix.svg
+    for png in app/icons/monix-*.png; do
+      [ -f "$png" ] || continue
+      size=${png##*monix-}; size=${size%.png}
+      sudo install -Dm644 "$png" \
+           "/usr/local/share/icons/hicolor/${size}x${size}/apps/monix.png"
+    done
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+      sudo gtk-update-icon-cache -q -t -f /usr/local/share/icons/hicolor || true
+    fi
+  fi
+
   say "Installing desktop launcher"
   tmp=$(mktemp)
   cat > "$tmp" <<'DESKTOP'
@@ -70,7 +85,7 @@ Type=Application
 Name=Monix
 Comment=Audient iD control panel
 Exec=monix-gui
-Icon=audio-card
+Icon=monix
 Terminal=false
 StartupWMClass=monix
 Categories=Audio;AudioVideo;Mixer;
