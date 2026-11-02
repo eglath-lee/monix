@@ -1,9 +1,8 @@
 # BUG: `monix-gui` crashes with GPF after every suspend/resume (use-after-free in `idctl_disconnect`)
 
-**Status**: fixed on `fix/suspend-resume-uaf` by the two commits that follow this one
-(`driver: keep struct idctl_dev alive until the last fd closes`,
-`gui: drop the stale device fd on ENODEV so reconnect works`); the fix has not been
-verified on hardware yet.
+**Status**: fixed on `fix/suspend-resume-uaf` (`driver: keep struct idctl_dev alive until the last
+fd closes`, `gui: drop the stale device fd on ENODEV so reconnect works`) and **verified on
+hardware** — see "Verification" at the end.
 **Component**: `driver/audient_id.c` (kernel module)
 **Severity**: high — the GUI daemon dies on every system resume; a stale userspace fd touching the freed
 `idctl_dev` can hit arbitrary kernel memory.
@@ -197,3 +196,25 @@ the UAF; it should not be merged as the final fix.
   both trigger it; no special userspace activity is required beyond `monix-gui` holding the fd.
 * This report is written from a downstream fork (`eglath-lee/monix`), please upstream it
   (`sKuhLight/monix`) as an issue/PR.
+
+## Verification (2026-11-02)
+
+Same machine and device as the report (Arch Linux, kernel `7.2.11-arch1-1`, iD24 `2708:000d`),
+using the `pm_test` reproducer above, three times, including runs before and after a reboot:
+
+* `monix-gui` survives the resume (before the fix it was killed by the GPF ~0.2 s after
+  `PM: suspend exit`);
+* `dmesg` contains exactly `... relay removed (/dev/audient_id0)` → `... relay ready at
+  /dev/audient_id0` → `PM: suspend exit`, with no `Oops`/GPF;
+* the GUI's fd moves to the re-created node (`21->/dev/audient_id0 inode=1544` before,
+  `21->/dev/audient_id0 inode=1546` after) and `monixctl status` answers again — the mixer
+  recovers on its own instead of needing an app restart;
+* `/sys/module/audient_id/refcnt` is 1 while the GUI holds the fd and returns to 0 after it
+  exits, i.e. the reference accounting balances.
+
+One side effect worth knowing: after an `Oops` from the old (buggy) module, a module reference
+is leaked, so `modprobe -r audient_id` keeps failing with `Module audient_id is in use` even
+with nothing holding the fd; only a reboot clears it.
+
+The report's cheap stop-gap (never `kfree()` in `disconnect()`, leaking one struct per probe)
+was not used.

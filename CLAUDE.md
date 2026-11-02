@@ -44,18 +44,20 @@ self-maintained:
 | `fix/dkms-toolchain` | merged into trunk; also open upstream as PR #2 |
 | `fix/window-app-id` | merged into trunk; also open upstream as PR #3 |
 | `feat/qt-qml-ui` | **not merged** — Qt 6 Quick/QML scaffold + planning docs; UI direction still undecided |
-| `fix/suspend-resume-uaf` | 3 commits on top of trunk: bug report + `kref` lifetime fix in the driver + stale-fd recovery in the GUI; **not yet verified on hardware**. Merges into trunk once a real suspend/resume passes |
+| `fix/suspend-resume-uaf` | 5 commits on top of trunk: bug report + `kref` lifetime fix in the driver + stale-fd recovery in the GUI + stability/verification docs; **verified on hardware** (`pm_test`, kernel 7.2.11), ready to merge |
 
 ### Work queue
 
 1. `fix/suspend-resume-uaf`: kernel use-after-free on suspend/resume, reported
-   in `docs/BUG-suspend-resume-use-after-free.md`. Commits done: (a) the report,
-   (b) `kref` + `.release` in `driver/audient_id.c` so `struct idctl_dev`
-   outlives open fds, (c) drop the stale fd on `-ENODEV`/`-EBADF`/`-ESHUTDOWN`
-   in `lib/monix.cpp` so the existing reconnect path in `app/main.cpp` re-opens
-   the device. **Remaining: hardware verification** (`pm_test` reproducer
-   below), then `git merge --no-ff` into `master` and push; the driver half is
-   also worth offering upstream since it is a kernel memory-safety bug.
+   in `docs/BUG-suspend-resume-use-after-free.md`. Commits: (a) the report, (b)
+   `kref` + `.release` in `driver/audient_id.c` so `struct idctl_dev` outlives
+   open fds, (c) drop the stale fd on `-ENODEV`/`-EBADF`/`-ESHUTDOWN` in
+   `lib/monix.cpp` so the existing reconnect path in `app/main.cpp` re-opens
+   the device, (d) keep the `audient_idN` number stable across a resume.
+   **Verified on hardware** with the `pm_test` reproducer (see the report's
+   "Verification" section). Remaining: `git merge --no-ff` into `master` and
+   push; the driver half is also worth offering upstream since it is a kernel
+   memory-safety bug.
 2. Upstream issue #1 (Ubuntu 26.04 install failure) — the main cause is fixed by
    PR #2; the remaining two root causes are unowned: `/etc/os-release` clobbering
    the module version in `tools/monix-driverctl` (`install_deps()` sources it into
@@ -157,12 +159,19 @@ Facts that matter when editing:
   same lock — verified by disassembling `misc_open()`/`misc_deregister()` in
   `/usr/src/linux/vmlinux` on 7.2.11-arch1-1. If a future kernel calls `->open()`
   outside that lock again, the open path needs its own registry/lock.
+  The ida id (i.e. the `audient_idN` number) is released in
+  `idctl_disconnect()`, not in `idctl_free()`: otherwise a stale fd pins the
+  number and the re-probe after a resume registers `audient_id1` instead of
+  `audient_id0`.
 - **Suspend/resume drops the device node**: every USB suspend/re-enumeration
   runs `idctl_disconnect()`, so any long-lived fd is stale after resume. The
   reproducer without a real sleep is `echo devices | sudo tee
   /sys/power/pm_test`, `echo mem | sudo tee /sys/power/state`, then `echo none`
   back; watch that `monix-gui` survives, `dmesg` has no GPF, and the mixer
-  reconnects on its own.
+  reconnects on its own. A failed run of the *old* module leaks a module
+  reference, after which `modprobe -r audient_id` fails with "Module ... is in
+  use" until the next reboot even with no fd open — check
+  `/sys/module/audient_id/refcnt` before blaming the new build.
 - **Userspace↔module ABI**: `struct idctl_msg` (16-byte header + 64-byte data)
   is defined packed and byte-identical on both sides (`driver/audient_id.c:53`
   and `lib/monix.cpp:18`). One ioctl/write = one USB control transfer, sync and
