@@ -28,3 +28,7 @@ capture/*.pcap
 
 # runtime UI state
 imgui.ini
+
+# local env (never commit)
+.env
+.env.*
